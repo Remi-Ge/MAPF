@@ -1,7 +1,7 @@
 CXX = g++
 CXXFLAGS = -Wall -Wextra -std=c++17 -Iinclude
 
-SRC = src/main.cpp src/GridGraph.cpp
+SRC = src/main.cpp src/GridGraph.cpp src/AStar.cpp
 OBJ = $(SRC:.cpp=.o)
 
 APP = build
