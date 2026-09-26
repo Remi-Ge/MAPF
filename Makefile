@@ -22,7 +22,7 @@ test: $(TEST_BINARIES)
 		"$$test_binary"; \
 	done
 
-build/test_%: tests/test_%.cpp src/graph.cpp | build/
+build/test_%: tests/test_%.cpp src/graph.cpp src/pathfinding.cpp | build/
 	$(CXX) $(CXXFLAGS) -Isrc $< -o $@
 
 build/:

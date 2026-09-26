@@ -25,7 +25,6 @@ int main() {
 
     graph.setObstacle(3, 1, true);
     assert(graph.getNeighbors({2, 1}) == std::vector<Point2D>({{1, 1}, {2, 0}}));
-
-    std::cout << "GridGraph tests passed\n";
+    
     return 0;
 }

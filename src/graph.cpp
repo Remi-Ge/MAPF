@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <functional>
 #include <vector>
 
 template <typename NodeId>
@@ -15,6 +17,14 @@ struct Point2D {
     }
     bool operator!=(const Point2D& other) const {
         return !(*this == other);
+    }
+};
+
+struct Point2DHash {
+    std::size_t operator()(const Point2D& point) const noexcept {
+        const std::size_t xHash = std::hash<int>{}(point.x);
+        const std::size_t yHash = std::hash<int>{}(point.y);
+        return xHash ^ (yHash + 0x9e3779b9U + (xHash << 6) + (xHash >> 2));
     }
 };
 
