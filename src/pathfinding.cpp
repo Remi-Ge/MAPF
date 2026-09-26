@@ -1,4 +1,4 @@
-#include "graph.cpp"
+#include "graph.hpp"
 
 #include <algorithm>
 #include <cstdlib>

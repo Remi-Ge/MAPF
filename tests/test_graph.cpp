@@ -1,4 +1,4 @@
-#include "graph.cpp"
+#include "graph.hpp"
 
 #include <cassert>
 #include <iostream>
