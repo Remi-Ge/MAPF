@@ -62,6 +62,17 @@ int main() {
     assert(edgeResult.has_value());
     assert(pathsAreConflictFree(edgeResult->pathsByAgent));
 
+    GridGraph manyAgentsGraph(2, 9);
+    std::vector<AgentTask> manyAgents;
+    for (int row = 0; row < 9; ++row) {
+        manyAgents.push_back({{0, row}, {1, row}});
+    }
+    const auto manyAgentsResult = solve_cbs(manyAgentsGraph, manyAgents);
+    assert(manyAgentsResult.has_value());
+    assert(manyAgentsResult->pathsByAgent.size() == 9);
+    assert(manyAgentsResult->cost == 9);
+    assert(pathsAreConflictFree(manyAgentsResult->pathsByAgent));
+
     GridGraph disconnectedGraph(3, 1);
     disconnectedGraph.setObstacle(1, 0, true);
     assert(!solve_cbs(disconnectedGraph, {{{0, 0}, {2, 0}}}).has_value());

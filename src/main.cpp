@@ -7,6 +7,8 @@
 
 namespace {
 
+constexpr int maxAgents = 32;
+
 void writePoint(const Point2D& point) {
 	std::cout << '[' << point.x << ',' << point.y << ']';
 }
@@ -74,7 +76,7 @@ int main(int argc, char* argv[]) {
 		}
 
 		if (cursor >= argc || !parseInteger(argv[cursor++], agentCount)
-			|| agentCount < 1 || agentCount > 8
+			|| agentCount < 1 || agentCount > maxAgents
 			|| argc != cursor + agentCount * 4) {
 			std::cerr << "Invalid agent count or coordinates.\n";
 			return 2;

@@ -6,6 +6,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const root = __dirname;
 const port = Number(process.env.PORT || 8000);
 const maxBodyBytes = 1024 * 1024;
+const maxAgents = 32;
 
 function sendJson(response, status, data) {
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -20,8 +21,8 @@ function validateScenario(data) {
   if (!data || !isInteger(data.width) || !isInteger(data.height)
       || data.width < 1 || data.height < 1 || data.width > 40 || data.height > 40
       || !Array.isArray(data.obstacles) || !Array.isArray(data.agents)
-      || data.agents.length < 1 || data.agents.length > 8) {
-    throw new Error('Use a grid from 1×1 to 40×40 and between 1 and 8 robots.');
+      || data.agents.length < 1 || data.agents.length > maxAgents) {
+    throw new Error(`Use a grid from 1×1 to 40×40 and between 1 and ${maxAgents} robots.`);
   }
 
   const inside = ([x, y]) => isInteger(x) && isInteger(y)
@@ -43,6 +44,9 @@ function validateScenario(data) {
         || !inside(agent.start) || !inside(agent.goal)) {
       throw new Error(`Robot ${index + 1} needs a start and a goal inside the grid.`);
     }
+    if (agent.name !== undefined && (typeof agent.name !== 'string' || agent.name.length > 40)) {
+      throw new Error(`Robot ${index + 1} name must be 40 characters or less.`);
+    }
     if (obstacles.has(key(agent.start)) || obstacles.has(key(agent.goal))) {
       throw new Error(`Robot ${index + 1} start or goal is on an obstacle.`);
     }
@@ -60,7 +64,10 @@ function validateScenario(data) {
     width: data.width,
     height: data.height,
     obstacles: [...obstacles].map(cell => cell.split(',').map(Number)),
-    agents: data.agents
+    agents: data.agents.map((agent, index) => ({
+      ...agent,
+      name: agent.name?.trim() || `Robot ${index + 1}`
+    }))
   };
 }
 
@@ -158,6 +165,9 @@ const server = http.createServer(async (request, response) => {
       const scenario = validateScenario(await readBody(request));
       compileSolver();
       const result = await runSolver(scenario);
+      result.agents.forEach((agent, index) => {
+        agent.name = scenario.agents[index].name;
+      });
       fs.mkdirSync(path.join(root, 'build'), { recursive: true });
       fs.writeFileSync(path.join(root, 'build', 'result.json'), `${JSON.stringify(result, null, 2)}\n`);
       sendJson(response, 200, result);

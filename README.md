@@ -6,10 +6,12 @@ Start the interactive visualizer and its local CBS API:
 make serve
 ```
 
-Open `http://localhost:8000`. Click cells to add/remove obstacles or use the
-start/goal tools to place the selected robot. Add robots with **+ Robot**, then
-choose **Run CBS** to calculate and animate conflict-free paths. The selected
-scenario and CBS paths are also written to `build/result.json`.
+Open `http://localhost:8000`. Set the grid columns and rows, then choose
+**Resize**. Edit a robot's name in the name field; use the start/goal tools to
+place its endpoints and click cells to add/remove obstacles. Add robots with
+**+ Robot**, or choose **Random setup** to create a connected random map and
+robot endpoints. Choose **Run CBS** to calculate and animate conflict-free
+paths. The selected scenario and CBS paths are also written to `build/result.json`.
 
 To export the built-in demo without opening the interface, run `make demo`.
 

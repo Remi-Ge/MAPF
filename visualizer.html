@@ -97,7 +97,22 @@
     .button-icon { width: 40px; padding: 0; font-size: 16px; }
     .button:focus-visible, input:focus-visible { outline: 3px solid rgba(36, 141, 133, .35); outline-offset: 2px; }
     #file-input { display: none; }
-    
+
+    .grid-size-controls { display: flex; align-items: end; gap: 6px; }
+    .grid-size-field { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 9px; font-weight: 750; }
+    .grid-size-field input, .editor-name {
+      height: 34px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--ink);
+      background: white;
+      font-size: 11px;
+    }
+    .grid-size-field input { width: 58px; }
+    .editor-name { width: 120px; }
+    .grid-size-controls .button { min-height: 34px; padding: 0 10px; font-size: 11px; }
+    .random-setup-button { min-height: 34px; padding: 0 11px; font-size: 11px; white-space: nowrap; }
     .editor-bar {
       display: flex;
       flex-wrap: wrap;
@@ -243,8 +258,12 @@
       .topbar .toolbar .button-primary { flex: 1; }
       .editor-bar { align-items: flex-start; flex-direction: column; padding: 11px; }
       .toolset, .editor-actions { width: 100%; }
+      .grid-size-controls { width: 100%; }
+      .random-setup-button { width: 100%; }
       .toolset { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
       .edit-mode { padding: 0 5px; font-size: 10px; }
+      .editor-name { min-width: 0; flex: 1; }
+      .editor-actions { flex-wrap: nowrap; }
       .workspace { gap: 14px; }
       .stage-head { padding: 14px; }
       .canvas-wrap { min-height: 0; padding: 10px; }
@@ -296,6 +315,12 @@
           <div class="status" id="source-status" aria-live="polite">Built-in example</div>
         </div>
         <div class="editor-bar">
+          <div class="grid-size-controls" aria-label="Grid size">
+            <label class="grid-size-field">Columns<input id="grid-width" type="number" min="1" max="40" value="7"></label>
+            <label class="grid-size-field">Rows<input id="grid-height" type="number" min="1" max="40" value="7"></label>
+            <button class="button" id="resize-grid" type="button">Resize</button>
+          </div>
+          <button class="button random-setup-button" id="random-setup" type="button" title="Generate random robot endpoints and obstacles"><span aria-hidden="true">⤨</span> Random setup</button>
           <div class="toolset" role="toolbar" aria-label="Grid editing tools">
             <button class="edit-mode" type="button" data-mode="obstacle" aria-pressed="true">Obstacle</button>
             <button class="edit-mode" type="button" data-mode="start" aria-pressed="false">Start</button>
@@ -304,6 +329,7 @@
           </div>
           <div class="editor-actions">
             <select class="editor-select" id="selected-agent" aria-label="Robot to edit"></select>
+            <input class="editor-name" id="agent-name" type="text" maxlength="40" aria-label="Selected robot name" placeholder="Robot name">
             <button class="button" id="add-agent" type="button" title="Add a robot">+ Robot</button>
             <button class="button button-icon" id="remove-agent" type="button" title="Remove the selected robot" aria-label="Remove the selected robot">−</button>
           </div>
@@ -379,6 +405,7 @@
     let frame = 0;
     let playing = false;
     let lastTick = 0;
+    let frameAtTick = 0;
     let animationId = 0;
     let conflicts = [];
     let editMode = 'obstacle';
@@ -432,10 +459,7 @@
 
     function updatePanel() {
       const horizon = maxTime();
-      range.max = String(Math.max(1, horizon));
-      range.value = String(frame);
-      document.querySelector('#time-label').textContent = `${Math.floor(frame)} / ${horizon}`;
-      document.querySelector('#frame-label').textContent = `Frame ${Math.floor(frame)}`;
+      updatePlaybackReadout();
       document.querySelector('#grid-label').textContent = `${scenario.width} × ${scenario.height} grid`;
       document.querySelector('#agent-count').textContent = `${scenario.agents.length} ${scenario.agents.length === 1 ? 'robot' : 'robots'}`;
       document.querySelector('#makespan-value').textContent = result ? horizon : '—';
@@ -476,6 +500,14 @@
           : 'No path conflicts';
     }
 
+    function updatePlaybackReadout() {
+      const horizon = maxTime();
+      range.max = String(Math.max(1, horizon));
+      range.value = String(frame);
+      document.querySelector('#time-label').textContent = `${Math.floor(frame)} / ${horizon}`;
+      document.querySelector('#frame-label').textContent = `Frame ${Math.floor(frame)}`;
+    }
+
     function syncAgentSelector() {
       const select = document.querySelector('#selected-agent');
       select.replaceChildren(...scenario.agents.map((agent, index) => {
@@ -486,7 +518,113 @@
       }));
       selectedAgent = Math.min(selectedAgent, scenario.agents.length - 1);
       select.value = String(selectedAgent);
+      document.querySelector('#agent-name').value = scenario.agents[selectedAgent].name || `Robot ${selectedAgent + 1}`;
       document.querySelector('#remove-agent').disabled = scenario.agents.length <= 1;
+    }
+
+    function syncGridSizeInputs() {
+      document.querySelector('#grid-width').value = String(scenario.width);
+      document.querySelector('#grid-height').value = String(scenario.height);
+    }
+
+    function resizeGrid() {
+      const width = document.querySelector('#grid-width').valueAsNumber;
+      const height = document.querySelector('#grid-height').valueAsNumber;
+      if (!Number.isInteger(width) || !Number.isInteger(height)
+          || width < 1 || height < 1 || width > 40 || height > 40) {
+        sourceStatus.textContent = 'Grid dimensions must be whole numbers from 1 to 40.';
+        return;
+      }
+
+      scenario.width = width;
+      scenario.height = height;
+      scenario.obstacles = scenario.obstacles.filter(([x, y]) => x < width && y < height);
+      for (const agent of scenario.agents) {
+        if (agent.start && (agent.start[0] >= width || agent.start[1] >= height)) agent.start = null;
+        if (agent.goal && (agent.goal[0] >= width || agent.goal[1] >= height)) agent.goal = null;
+      }
+      syncGridSizeInputs();
+      scenarioChanged('Grid resized · run CBS to calculate');
+    }
+
+    function shuffle(values) {
+      const shuffled = [...values];
+      for (let index = shuffled.length - 1; index > 0; index -= 1) {
+        const other = Math.floor(Math.random() * (index + 1));
+        [shuffled[index], shuffled[other]] = [shuffled[other], shuffled[index]];
+      }
+      return shuffled;
+    }
+
+    function openGridIsConnected(obstacles) {
+      const blocked = new Set(obstacles.map(([x, y]) => `${x},${y}`));
+      const totalOpen = scenario.width * scenario.height - blocked.size;
+      let firstOpen = null;
+      for (let y = 0; y < scenario.height && !firstOpen; y += 1) {
+        for (let x = 0; x < scenario.width; x += 1) {
+          if (!blocked.has(`${x},${y}`)) {
+            firstOpen = [x, y];
+            break;
+          }
+        }
+      }
+      if (!firstOpen) return false;
+
+      const visited = new Set([`${firstOpen[0]},${firstOpen[1]}`]);
+      const queue = [firstOpen];
+      for (let index = 0; index < queue.length; index += 1) {
+        const [x, y] = queue[index];
+        for (const [nextX, nextY] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+          const key = `${nextX},${nextY}`;
+          if (nextX >= 0 && nextX < scenario.width && nextY >= 0 && nextY < scenario.height
+              && !blocked.has(key) && !visited.has(key)) {
+            visited.add(key);
+            queue.push([nextX, nextY]);
+          }
+        }
+      }
+      return visited.size === totalOpen;
+    }
+
+    function randomSetup() {
+      const cells = [];
+      for (let y = 0; y < scenario.height; y += 1) {
+        for (let x = 0; x < scenario.width; x += 1) cells.push([x, y]);
+      }
+      const requiredCells = scenario.agents.length * 2;
+      if (cells.length < requiredCells) {
+        sourceStatus.textContent = `Grid needs at least ${requiredCells} cells for ${scenario.agents.length} robots.`;
+        return;
+      }
+
+      const shuffled = shuffle(cells);
+      const starts = shuffled.slice(0, scenario.agents.length);
+      const goals = shuffled.slice(scenario.agents.length, requiredCells);
+      if (scenario.width === 1 || scenario.height === 1) {
+        const alongGrid = ([x1, y1], [x2, y2]) => scenario.width === 1 ? y1 - y2 : x1 - x2;
+        starts.sort(alongGrid);
+        goals.sort(alongGrid);
+      }
+
+      const agents = scenario.agents.map((agent, index) => ({
+        ...agent,
+        start: starts[index],
+        goal: goals[index]
+      }));
+      const obstacleCandidates = shuffle(shuffled.slice(requiredCells));
+      const targetObstacles = Math.floor(cells.length * 0.08);
+      const obstacles = [];
+      for (const candidate of obstacleCandidates) {
+        if (obstacles.length >= targetObstacles) break;
+        obstacles.push(candidate);
+        if (!openGridIsConnected(obstacles)) obstacles.pop();
+      }
+
+      scenario.agents = agents;
+      scenario.obstacles = obstacles;
+      syncAgentSelector();
+      setEditMode(editMode);
+      scenarioChanged(`Random setup ready · ${obstacles.length} obstacles · run CBS to calculate`);
     }
 
     function setEditMode(mode) {
@@ -525,6 +663,7 @@
           goal: agent.goal ? [...agent.goal] : [...agent.path.at(-1)]
         }))
       };
+      syncGridSizeInputs();
       selectedAgent = Math.min(selectedAgent, scenario.agents.length - 1);
       syncAgentSelector();
       conflicts = findConflicts();
@@ -744,21 +883,19 @@
 
     function tick(timestamp) {
       if (!playing) return;
-      if (!lastTick) lastTick = timestamp;
-      const duration = Number(document.querySelector('#speed-select').value);
-      const elapsed = timestamp - lastTick;
-      if (elapsed >= duration) {
-        frame = Math.min(maxTime(), frame + elapsed / duration);
+      if (!lastTick) {
         lastTick = timestamp;
-        if (frame >= maxTime()) {
-          frame = maxTime();
-          playing = false;
-          updatePlayButton();
-        }
-        render();
-      } else {
-        draw();
+        frameAtTick = frame;
       }
+      const duration = Number(document.querySelector('#speed-select').value);
+      frame = Math.min(maxTime(), frameAtTick + (timestamp - lastTick) / duration);
+      if (frame >= maxTime()) {
+        frame = maxTime();
+        playing = false;
+        updatePlayButton();
+      }
+      updatePlaybackReadout();
+      draw();
       if (playing) animationId = requestAnimationFrame(tick);
     }
 
@@ -772,16 +909,6 @@
       playing = false;
       cancelAnimationFrame(animationId);
       updatePlayButton();
-    }
-
-    function loadResult(data, label) {
-      result = validateResult(data);
-      conflicts = findConflicts();
-      frame = 0;
-      pause();
-      sourceStatus.textContent = label;
-      sourceStatus.title = label;
-      render();
     }
 
     document.querySelector('#load-button').addEventListener('click', () => document.querySelector('#file-input').click());
@@ -801,11 +928,29 @@
     });
     document.querySelector('#selected-agent').addEventListener('change', event => {
       selectedAgent = Number(event.target.value);
+      syncAgentSelector();
       setEditMode(editMode);
     });
+    document.querySelector('#agent-name').addEventListener('change', event => {
+      const fallback = `Robot ${selectedAgent + 1}`;
+      scenario.agents[selectedAgent].name = event.target.value.trim() || fallback;
+      syncAgentSelector();
+      setEditMode(editMode);
+      scenarioChanged('Robot renamed · run CBS to calculate');
+    });
+    document.querySelector('#agent-name').addEventListener('keydown', event => {
+      if (event.key === 'Enter') event.currentTarget.blur();
+    });
+    document.querySelector('#resize-grid').addEventListener('click', resizeGrid);
+    document.querySelector('#random-setup').addEventListener('click', randomSetup);
+    document.querySelectorAll('#grid-width, #grid-height').forEach(input => {
+      input.addEventListener('keydown', event => {
+        if (event.key === 'Enter') resizeGrid();
+      });
+    });
     document.querySelector('#add-agent').addEventListener('click', () => {
-      if (scenario.agents.length >= 8) {
-        sourceStatus.textContent = 'The solver supports up to 8 robots.';
+      if (scenario.agents.length >= 32) {
+        sourceStatus.textContent = 'The solver supports up to 32 robots.';
         return;
       }
       const name = `Robot ${scenario.agents.length + 1}`;
@@ -841,6 +986,12 @@
       render();
     });
     range.addEventListener('input', () => { pause(); frame = Number(range.value); render(); });
+    document.querySelector('#speed-select').addEventListener('change', () => {
+      if (playing) {
+        frameAtTick = frame;
+        lastTick = performance.now();
+      }
+    });
     window.addEventListener('resize', draw);
     window.addEventListener('keydown', event => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
@@ -855,6 +1006,7 @@
     });
 
     syncAgentSelector();
+    syncGridSizeInputs();
     setEditMode(editMode);
     conflicts = findConflicts();
     render();
