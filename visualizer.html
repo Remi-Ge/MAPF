@@ -178,6 +178,7 @@
       max-width: 45%; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap;
     }
     .canvas-wrap {
+      position: relative;
       display: grid;
       min-height: 420px;
       place-items: center;
@@ -185,6 +186,23 @@
       background-image: linear-gradient(rgba(36, 72, 60, .025) 1px, transparent 1px), linear-gradient(90deg, rgba(36, 72, 60, .025) 1px, transparent 1px);
       background-size: 22px 22px;
     }
+    .robot-tooltip {
+      position: absolute;
+      z-index: 2;
+      display: none;
+      max-width: calc(100% - 24px);
+      padding: 8px 10px;
+      border: 1px solid rgba(217, 225, 217, .9);
+      border-radius: 7px;
+      color: var(--ink);
+      background: rgba(251, 252, 249, .96);
+      box-shadow: 0 5px 18px rgba(27, 47, 38, .13);
+      font-size: 11px;
+      line-height: 1.45;
+      pointer-events: none;
+    }
+    .robot-tooltip.visible { display: block; }
+    .robot-tooltip strong { font-size: 12px; }
     canvas {
       display: block;
       width: min(100%, 680px);
@@ -337,6 +355,7 @@
         <div class="edit-hint" id="edit-hint">Click cells to add or remove obstacles.</div>
         <div class="canvas-wrap">
           <canvas id="map" aria-label="Editable grid and animated robot paths"></canvas>
+          <div class="robot-tooltip" id="robot-tooltip" role="status"></div>
         </div>
         <div class="playback">
           <button class="button button-icon" id="previous-button" type="button" title="Previous timestep" aria-label="Previous timestep">‹</button>
@@ -390,6 +409,8 @@
     };
 
     const canvas = document.querySelector('#map');
+    const canvasWrap = document.querySelector('.canvas-wrap');
+    const robotTooltip = document.querySelector('#robot-tooltip');
     const context = canvas.getContext('2d');
     const range = document.querySelector('#time-range');
     const playButton = document.querySelector('#play-button');
@@ -410,6 +431,7 @@
     let conflicts = [];
     let editMode = 'obstacle';
     let selectedAgent = 0;
+    let hoveredAgent = null;
 
     function validateResult(data) {
       if (!data || !Number.isInteger(data.width) || !Number.isInteger(data.height)
@@ -799,11 +821,17 @@
         result.agents.forEach((agent, index) => {
           const color = colors[index % colors.length];
           context.save();
-          context.globalAlpha = .2;
+          context.globalAlpha = hoveredAgent === null
+            ? .2
+            : hoveredAgent === index ? .92 : .045;
           context.strokeStyle = color;
-          context.lineWidth = Math.max(2, cell * .055);
+          context.lineWidth = Math.max(2, cell * (hoveredAgent === index ? .1 : .055));
           context.lineCap = 'round';
           context.lineJoin = 'round';
+          if (hoveredAgent === index) {
+            context.shadowColor = color;
+            context.shadowBlur = Math.max(8, cell * .22);
+          }
           context.beginPath();
           agent.path.forEach((point, pointIndex) => {
             const [x, y] = center(point);
@@ -830,8 +858,17 @@
         }
         if (agent.goal) {
           const [x, y] = center(agent.goal);
+          if (hoveredAgent === index) {
+            context.beginPath();
+            context.arc(x, y, radius * 1.22, 0, Math.PI * 2);
+            context.fillStyle = `${color}1c`;
+            context.fill();
+            context.strokeStyle = color;
+            context.lineWidth = 2.5;
+            context.stroke();
+          }
           context.beginPath();
-          context.arc(x, y, radius * .72, 0, Math.PI * 2);
+          context.arc(x, y, radius * (hoveredAgent === index ? .82 : .72), 0, Math.PI * 2);
           context.fillStyle = `${color}22`;
           context.fill();
           context.strokeStyle = color;
@@ -853,11 +890,12 @@
         }
         if (!position) return;
         const [x, y] = center(position);
-        const radius = Math.max(7, cell * .29);
+        const isHovered = hoveredAgent === index;
+        const radius = Math.max(7, cell * (isHovered ? .34 : .29));
         context.save();
-        context.shadowColor = 'rgba(27, 47, 38, .22)';
-        context.shadowBlur = 10;
-        context.shadowOffsetY = 3;
+        context.shadowColor = isHovered ? color : 'rgba(27, 47, 38, .22)';
+        context.shadowBlur = isHovered ? 20 : 10;
+        context.shadowOffsetY = isHovered ? 0 : 3;
         context.beginPath();
         context.arc(x, y, radius, 0, Math.PI * 2);
         context.fillStyle = color;
@@ -874,6 +912,69 @@
         context.textBaseline = 'middle';
         context.fillText(String(index + 1), x, y + .5);
       });
+    }
+
+    function updateRobotHover(event) {
+      const bounds = canvas.getBoundingClientRect();
+      const margin = Math.max(28, Math.min(bounds.width, bounds.height) * .075);
+      const cell = Math.min(
+        (bounds.width - margin * 2) / scenario.width,
+        (bounds.height - margin * 2) / scenario.height
+      );
+      const left = (bounds.width - cell * scenario.width) / 2;
+      const top = (bounds.height - cell * scenario.height) / 2;
+      const localX = event.clientX - bounds.left;
+      const localY = event.clientY - bounds.top;
+      let nearestAgent = null;
+      let nearestDistance = Math.max(13, cell * .43);
+      scenario.agents.forEach((scenarioAgent, index) => {
+        const path = result && result.agents[index]?.path;
+        let position = scenarioAgent.start;
+        if (path) {
+          const low = Math.floor(frame);
+          const fraction = frame - low;
+          const from = path[Math.min(low, path.length - 1)];
+          const to = path[Math.min(low + 1, path.length - 1)];
+          position = [from[0] + (to[0] - from[0]) * fraction, from[1] + (to[1] - from[1]) * fraction];
+        }
+        if (!position) return;
+        const centerX = left + (position[0] + .5) * cell;
+        const centerY = top + (position[1] + .5) * cell;
+        const distance = Math.hypot(localX - centerX, localY - centerY);
+        if (distance < nearestDistance) {
+          nearestAgent = index;
+          nearestDistance = distance;
+        }
+      });
+
+      hoveredAgent = nearestAgent;
+      canvas.style.cursor = nearestAgent === null ? 'crosshair' : 'pointer';
+      if (nearestAgent === null) {
+        robotTooltip.classList.remove('visible');
+        canvas.removeAttribute('aria-describedby');
+      } else {
+        const agent = scenario.agents[nearestAgent];
+        const goal = agent.goal ? `Goal: (${agent.goal[0]}, ${agent.goal[1]})` : 'Goal not set';
+        const tooltipName = document.createElement('strong');
+        tooltipName.textContent = agent.name || `Robot ${nearestAgent + 1}`;
+        const tooltipGoal = document.createElement('span');
+        tooltipGoal.textContent = ` · ${goal}`;
+        robotTooltip.replaceChildren(tooltipName, tooltipGoal);
+        robotTooltip.classList.add('visible');
+        const wrapBounds = canvasWrap.getBoundingClientRect();
+        const tooltipLeft = Math.min(
+          Math.max(8, event.clientX - wrapBounds.left + 14),
+          wrapBounds.width - robotTooltip.offsetWidth - 8
+        );
+        const tooltipTop = Math.min(
+          Math.max(8, event.clientY - wrapBounds.top + 14),
+          wrapBounds.height - robotTooltip.offsetHeight - 8
+        );
+        robotTooltip.style.left = `${tooltipLeft}px`;
+        robotTooltip.style.top = `${tooltipTop}px`;
+        canvas.setAttribute('aria-describedby', 'robot-tooltip');
+      }
+      draw();
     }
 
     function render() {
@@ -970,6 +1071,14 @@
     });
     document.querySelector('#calculate-button').addEventListener('click', calculateScenario);
     canvas.addEventListener('click', editCell);
+    canvas.addEventListener('pointermove', updateRobotHover);
+    canvas.addEventListener('pointerleave', () => {
+      hoveredAgent = null;
+      robotTooltip.classList.remove('visible');
+      canvas.removeAttribute('aria-describedby');
+      canvas.style.cursor = 'crosshair';
+      draw();
+    });
     document.querySelector('#reset-button').addEventListener('click', () => { frame = 0; pause(); render(); });
     document.querySelector('#previous-button').addEventListener('click', () => { pause(); frame = Math.max(0, Math.floor(frame) - 1); render(); });
     document.querySelector('#next-button').addEventListener('click', () => { pause(); frame = Math.min(maxTime(), Math.floor(frame) + 1); render(); });
