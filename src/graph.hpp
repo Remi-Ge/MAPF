@@ -55,6 +55,10 @@ public:
         return !obstacles[y * width + x];
     }
 
+    std::size_t getNodeCount() const {
+        return obstacles.size();
+    }
+
     std::vector<Point2D> getNeighbors(const Point2D& node) const override {
         std::vector<Point2D> neighbors;
         neighbors.reserve(4);

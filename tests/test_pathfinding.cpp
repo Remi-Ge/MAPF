@@ -1,4 +1,4 @@
-#include "pathfinding.cpp"
+#include "pathfinding.hpp"
 
 #include <cassert>
 #include <cstdlib>
@@ -25,6 +25,34 @@ int main() {
     graph.setObstacle(2, 4, true);
     assert(low_level(graph, start, goal).empty());
     assert(low_level(graph, start, start) == std::vector<Point2D>({start}));
+
+    GridGraph constrainedGraph(3, 1);
+    ConstraintTreeNode vertexConstraints;
+    vertexConstraints.constraints.push_back(VertexConstraint{0, {1, 0}, 1});
+    const std::vector<Point2D> vertexConstrainedPath = low_level(
+        constrainedGraph,
+        {0, 0},
+        {2, 0},
+        0,
+        vertexConstraints
+    );
+    assert(vertexConstrainedPath.size() == 4);
+    assert(vertexConstrainedPath[1] == Point2D({0, 0}));
+    assert(vertexConstrainedPath[2] == Point2D({1, 0}));
+
+    GridGraph edgeGraph(2, 1);
+    ConstraintTreeNode edgeConstraints;
+    edgeConstraints.constraints.push_back(EdgeConstraint{0, {0, 0}, {1, 0}, 0});
+    const std::vector<Point2D> edgeConstrainedPath = low_level(
+        edgeGraph,
+        {0, 0},
+        {1, 0},
+        0,
+        edgeConstraints
+    );
+    assert(edgeConstrainedPath.size() == 3);
+    assert(edgeConstrainedPath[1] == Point2D({0, 0}));
+    assert(edgeConstrainedPath[2] == Point2D({1, 0}));
 
     return 0;
 }

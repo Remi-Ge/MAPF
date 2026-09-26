@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MAPF | CBS Playback</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f2f5f0;
+      --panel: #fbfcf9;
+      --ink: #1c302a;
+      --muted: #73827a;
+      --line: #d9e1d9;
+      --forest: #24483c;
+      --lime: #c9ed75;
+      --coral: #e47755;
+      --teal: #248d85;
+      --gold: #d8a83d;
+      --blue: #5584b8;
+      --pink: #bd6081;
+      --board: #e7eee6;
+      --shadow: 0 20px 60px rgba(39, 65, 51, .08);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-width: 0;
+      min-height: 100vh;
+      margin: 0;
+      color: var(--ink);
+      background-color: var(--paper);
+      background-image: radial-gradient(#cbd8cb 0.7px, transparent 0.7px);
+      background-size: 19px 19px;
+    }
+
+    button, input { font: inherit; }
+    button { color: inherit; }
+
+    .shell {
+      width: min(1440px, 100%);
+      margin: 0 auto;
+      padding: 28px clamp(16px, 3vw, 44px) 36px;
+    }
+
+    .topbar, .brand, .toolbar, .playback, .range-row, .section-heading, .agent-row, .metric-row {
+      display: flex;
+      align-items: center;
+    }
+
+    .topbar { justify-content: space-between; gap: 18px; padding-bottom: 24px; }
+    .brand { gap: 12px; }
+    .brand-mark {
+      display: grid;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border-radius: 12px;
+      color: var(--lime);
+      background: var(--forest);
+      font-size: 19px;
+      font-weight: 800;
+    }
+    .brand-name { font-size: 14px; font-weight: 750; letter-spacing: .02em; }
+    .brand-sub { margin-top: 2px; color: var(--muted); font-size: 11px; }
+    .eyebrow { color: var(--teal); font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    h1 {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(27px, 3vw, 39px);
+      font-weight: 500;
+      letter-spacing: 0;
+      line-height: 1.1;
+    }
+    .intro { display: flex; flex-direction: column; gap: 8px; }
+    .toolbar { gap: 8px; }
+    .button {
+      display: inline-flex;
+      min-height: 40px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      transition: transform .16s ease, border-color .16s ease, background .16s ease;
+    }
+    .button:hover { transform: translateY(-1px); border-color: #aebeb0; }
+    .button-primary { border-color: var(--forest); color: white; background: var(--forest); }
+    .button-primary:hover { border-color: #315d4d; background: #315d4d; }
+    .button-icon { width: 40px; padding: 0; font-size: 16px; }
+    .button:focus-visible, input:focus-visible { outline: 3px solid rgba(36, 141, 133, .35); outline-offset: 2px; }
+    #file-input { display: none; }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1.65fr) minmax(280px, .72fr);
+      gap: 22px;
+      align-items: start;
+    }
+    .stage, .sidebar {
+      border: 1px solid rgba(217, 225, 217, .9);
+      border-radius: 12px;
+      background: rgba(251, 252, 249, .94);
+      box-shadow: var(--shadow);
+    }
+    .stage { overflow: hidden; }
+    .stage-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 17px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+    .stage-title { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 750; }
+    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 0 4px rgba(36, 141, 133, .12); }
+    .status {
+      max-width: 45%; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .canvas-wrap {
+      display: grid;
+      min-height: 420px;
+      place-items: center;
+      padding: clamp(12px, 2.2vw, 28px);
+      background-image: linear-gradient(rgba(36, 72, 60, .025) 1px, transparent 1px), linear-gradient(90deg, rgba(36, 72, 60, .025) 1px, transparent 1px);
+      background-size: 22px 22px;
+    }
+    canvas {
+      display: block;
+      width: min(100%, 680px);
+      height: auto;
+      aspect-ratio: 1;
+      border-radius: 8px;
+    }
+    .playback {
+      gap: 8px;
+      padding: 14px 18px 17px;
+      border-top: 1px solid var(--line);
+    }
+    .playback .button { flex: 0 0 auto; }
+    .play-button { width: 42px; }
+    .range-box { min-width: 0; flex: 1; padding: 0 8px; }
+    .range-row { justify-content: space-between; gap: 12px; margin-bottom: 6px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+    input[type="range"] { display: block; width: 100%; height: 5px; accent-color: var(--teal); cursor: pointer; }
+    .speed-select {
+      height: 36px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--ink);
+      background: var(--panel);
+      font-size: 11px;
+    }
+
+    .sidebar { padding: 21px; }
+    .section-heading { justify-content: space-between; gap: 8px; margin-bottom: 16px; }
+    h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 21px; font-weight: 500; }
+    .small-label { color: var(--muted); font-size: 10px; }
+    .metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      overflow: hidden;
+      margin-bottom: 24px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--line);
+    }
+    .metric { min-height: 78px; padding: 13px; background: var(--panel); }
+    .metric-label { color: var(--muted); font-size: 10px; }
+    .metric-value { margin-top: 7px; font-family: Georgia, "Times New Roman", serif; font-size: 24px; font-variant-numeric: tabular-nums; }
+    .section-heading .count { color: var(--muted); font-family: inherit; font-size: 11px; }
+    .agent-list { display: flex; flex-direction: column; }
+    .agent-row { gap: 11px; min-width: 0; padding: 12px 0; border-top: 1px solid var(--line); }
+    .agent-color { width: 10px; height: 10px; flex: 0 0 auto; border-radius: 3px; }
+    .agent-info { min-width: 0; flex: 1; }
+    .agent-name { overflow: hidden; font-size: 12px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+    .agent-route { overflow: hidden; margin-top: 4px; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .agent-steps { color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+    .conflict-status { display: flex; align-items: center; gap: 9px; margin-top: 21px; padding: 12px; border-radius: 8px; background: #e9f4e9; color: #286144; font-size: 11px; font-weight: 700; }
+    .conflict-status.has-conflicts { background: #fff0e9; color: #a04f31; }
+    .conflict-symbol { display: grid; width: 20px; height: 20px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: white; }
+    .footer-note { display: flex; justify-content: space-between; gap: 10px; margin-top: 18px; color: var(--muted); font-size: 10px; }
+
+    @media (max-width: 900px) {
+      .workspace { grid-template-columns: minmax(0, 1fr); }
+      .sidebar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 24px; }
+      .sidebar > .section-heading:first-child { grid-column: 1 / -1; }
+      .metrics { align-self: start; }
+      .agents-section { grid-column: 1; }
+      .conflict-status { align-self: end; }
+      .footer-note { grid-column: 1 / -1; }
+    }
+    @media (max-width: 580px) {
+      .shell { padding: 17px 12px 24px; }
+      .topbar { align-items: flex-start; flex-direction: column; padding-bottom: 17px; }
+      .topbar .toolbar { width: 100%; }
+      .topbar .toolbar .button-primary { flex: 1; }
+      .workspace { gap: 14px; }
+      .stage-head { padding: 14px; }
+      .canvas-wrap { min-height: 0; padding: 10px; }
+      .playback { flex-wrap: wrap; gap: 6px; padding: 11px; }
+      .range-box { order: 5; width: 100%; flex-basis: 100%; padding: 7px 3px 0; }
+      .playback .button { min-height: 36px; }
+      .sidebar { display: block; padding: 16px; }
+      .metrics { margin-bottom: 19px; }
+      .status { max-width: 48%; }
+    }
+    @media (max-width: 340px) {
+      .topbar .toolbar .button { padding: 0 10px; }
+      .topbar .toolbar .button-primary { flex: 1; }
+      .brand-sub { font-size: 10px; }
+      .stage-title { font-size: 12px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="intro">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">M</div>
+          <div>
+            <div class="brand-name">MAPF LAB</div>
+            <div class="brand-sub">Multi-agent pathfinding</div>
+          </div>
+        </div>
+        <div class="eyebrow">CBS / Solution playback</div>
+        <h1>Robot paths</h1>
+      </div>
+      <div class="toolbar">
+        <input id="file-input" type="file" accept="application/json,.json">
+        <button class="button button-primary" id="load-button" type="button"><span aria-hidden="true">↥</span> Load result</button>
+        <button class="button" id="reset-button" type="button" title="Return to the first timestep">Reset</button>
+      </div>
+    </header>
+
+    <section class="workspace" aria-label="CBS path playback">
+      <div class="stage">
+        <div class="stage-head">
+          <div class="stage-title"><span class="live-dot" aria-hidden="true"></span><span id="stage-caption">Solution map</span></div>
+          <div class="status" id="source-status" aria-live="polite">Built-in example</div>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="map" aria-label="Animated grid showing robot paths"></canvas>
+        </div>
+        <div class="playback">
+          <button class="button button-icon" id="previous-button" type="button" title="Previous timestep" aria-label="Previous timestep">‹</button>
+          <button class="button button-primary button-icon play-button" id="play-button" type="button" title="Play animation" aria-label="Play animation">▶</button>
+          <button class="button button-icon" id="next-button" type="button" title="Next timestep" aria-label="Next timestep">›</button>
+          <div class="range-box">
+            <div class="range-row"><span>TIME STEP</span><span id="time-label">0 / 0</span></div>
+            <input id="time-range" type="range" min="0" max="1" step="0.01" value="0" aria-label="Animation time step">
+          </div>
+          <select id="speed-select" class="speed-select" aria-label="Animation speed">
+            <option value="900">0.5×</option>
+            <option value="520" selected>1×</option>
+            <option value="260">2×</option>
+          </select>
+        </div>
+      </div>
+
+      <aside class="sidebar">
+        <div class="section-heading">
+          <h2>Run summary</h2>
+          <span class="small-label" id="grid-label">7 × 7 grid</span>
+        </div>
+        <div class="metrics">
+          <div class="metric"><div class="metric-label">SUM OF COSTS</div><div class="metric-value" id="cost-value">—</div></div>
+          <div class="metric"><div class="metric-label">MAKESPAN</div><div class="metric-value" id="makespan-value">—</div></div>
+        </div>
+        <div class="agents-section">
+          <div class="section-heading"><h2>Robots</h2><span class="count" id="agent-count">0 agents</span></div>
+          <div class="agent-list" id="agent-list"></div>
+        </div>
+        <div class="conflict-status" id="conflict-status">
+          <span class="conflict-symbol" id="conflict-symbol" aria-hidden="true">✓</span>
+          <span id="conflict-label">No path conflicts</span>
+        </div>
+        <div class="footer-note"><span id="frame-label">Frame 0</span><span>Goal holds after arrival</span></div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const colors = ['#e47755', '#248d85', '#d8a83d', '#5584b8', '#bd6081', '#718d48'];
+    const demo = {
+      width: 7,
+      height: 7,
+      cost: 16,
+      obstacles: [[1, 1], [5, 5]],
+      agents: [
+        { name: 'Robot 1', start: [0, 3], goal: [6, 3], path: [[0, 3], [1, 3], [2, 3], [2, 2], [3, 2], [4, 2], [5, 2], [6, 2], [6, 3]] },
+        { name: 'Robot 2', start: [3, 0], goal: [3, 6], path: [[3, 0], [3, 1], [3, 2], [4, 2], [5, 2], [5, 3], [5, 4], [4, 4], [3, 4], [3, 5], [3, 6]] }
+      ]
+    };
+
+    const canvas = document.querySelector('#map');
+    const context = canvas.getContext('2d');
+    const range = document.querySelector('#time-range');
+    const playButton = document.querySelector('#play-button');
+    const sourceStatus = document.querySelector('#source-status');
+    let result = demo;
+    let frame = 0;
+    let playing = false;
+    let lastTick = 0;
+    let animationId = 0;
+    let conflicts = [];
+
+    function validateResult(data) {
+      if (!data || !Number.isInteger(data.width) || !Number.isInteger(data.height)
+          || data.width < 1 || data.height < 1 || !Array.isArray(data.agents)
+          || !Array.isArray(data.obstacles)) {
+        throw new Error('Expected width, height, obstacles and agents in the JSON result.');
+      }
+      for (const [index, agent] of data.agents.entries()) {
+        if (!agent || !Array.isArray(agent.path) || agent.path.length === 0
+            || !agent.path.every(point => Array.isArray(point) && point.length === 2
+              && Number.isInteger(point[0]) && Number.isInteger(point[1]))) {
+          throw new Error(`Robot ${index + 1} has no valid path.`);
+        }
+      }
+      return data;
+    }
+
+    function maxTime() {
+      return Math.max(0, ...result.agents.map(agent => agent.path.length - 1));
+    }
+
+    function pointAt(agent, time) {
+      return agent.path[Math.min(Math.floor(time), agent.path.length - 1)];
+    }
+
+    function findConflicts() {
+      const found = [];
+      const horizon = maxTime();
+      const at = (agent, time) => agent.path[Math.min(time, agent.path.length - 1)];
+      for (let time = 0; time <= horizon; time += 1) {
+        for (let first = 0; first < result.agents.length; first += 1) {
+          for (let second = first + 1; second < result.agents.length; second += 1) {
+            const a = at(result.agents[first], time);
+            const b = at(result.agents[second], time);
+            if (a[0] === b[0] && a[1] === b[1]) found.push({ type: 'vertex', time });
+            if (time < horizon) {
+              const aNext = at(result.agents[first], time + 1);
+              const bNext = at(result.agents[second], time + 1);
+              if ((a[0] !== aNext[0] || a[1] !== aNext[1])
+                  && a[0] === bNext[0] && a[1] === bNext[1]
+                  && aNext[0] === b[0] && aNext[1] === b[1]) {
+                found.push({ type: 'edge', time });
+              }
+            }
+          }
+        }
+      }
+      return found;
+    }
+
+    function updatePanel() {
+      const horizon = maxTime();
+      range.max = String(Math.max(1, horizon));
+      range.value = String(frame);
+      document.querySelector('#time-label').textContent = `${Math.floor(frame)} / ${horizon}`;
+      document.querySelector('#frame-label').textContent = `Frame ${Math.floor(frame)}`;
+      document.querySelector('#grid-label').textContent = `${result.width} × ${result.height} grid`;
+      document.querySelector('#agent-count').textContent = `${result.agents.length} ${result.agents.length === 1 ? 'agent' : 'agents'}`;
+      document.querySelector('#makespan-value').textContent = horizon;
+      const sum = result.agents.reduce((total, agent) => total + agent.path.length - 1, 0);
+      document.querySelector('#cost-value').textContent = Number.isFinite(result.cost) ? result.cost : sum;
+      const list = document.querySelector('#agent-list');
+      list.replaceChildren(...result.agents.map((agent, index) => {
+        const row = document.createElement('div');
+        row.className = 'agent-row';
+        const swatch = document.createElement('span');
+        swatch.className = 'agent-color';
+        swatch.style.backgroundColor = colors[index % colors.length];
+        const info = document.createElement('div');
+        info.className = 'agent-info';
+        const name = document.createElement('div');
+        name.className = 'agent-name';
+        name.textContent = agent.name || `Robot ${index + 1}`;
+        const route = document.createElement('div');
+        route.className = 'agent-route';
+        route.textContent = `${agent.start ? agent.start.join(', ') : agent.path[0].join(', ')}  →  ${agent.goal ? agent.goal.join(', ') : agent.path.at(-1).join(', ')}`;
+        info.append(name, route);
+        const steps = document.createElement('span');
+        steps.className = 'agent-steps';
+        steps.textContent = `${agent.path.length - 1} steps`;
+        row.append(swatch, info, steps);
+        return row;
+      }));
+      const status = document.querySelector('#conflict-status');
+      status.classList.toggle('has-conflicts', conflicts.length > 0);
+      document.querySelector('#conflict-symbol').textContent = conflicts.length > 0 ? '!' : '✓';
+      document.querySelector('#conflict-label').textContent = conflicts.length > 0
+        ? `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} found`
+        : 'No path conflicts';
+    }
+
+    function draw() {
+      const bounds = canvas.getBoundingClientRect();
+      if (!bounds.width || !bounds.height) return;
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.round(bounds.width * ratio);
+      canvas.height = Math.round(bounds.height * ratio);
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      const width = bounds.width;
+      const height = bounds.height;
+      context.clearRect(0, 0, width, height);
+      context.fillStyle = '#e7eee6';
+      context.fillRect(0, 0, width, height);
+
+      const margin = Math.max(28, Math.min(width, height) * .075);
+      const cell = Math.min((width - margin * 2) / result.width, (height - margin * 2) / result.height);
+      const boardWidth = cell * result.width;
+      const boardHeight = cell * result.height;
+      const left = (width - boardWidth) / 2;
+      const top = (height - boardHeight) / 2;
+      const center = ([x, y]) => [left + (x + .5) * cell, top + (y + .5) * cell];
+
+      context.fillStyle = '#f9fbf7';
+      context.fillRect(left, top, boardWidth, boardHeight);
+      context.strokeStyle = '#d4ded4';
+      context.lineWidth = 1;
+      for (let x = 0; x <= result.width; x += 1) {
+        context.beginPath();
+        context.moveTo(left + x * cell, top);
+        context.lineTo(left + x * cell, top + boardHeight);
+        context.stroke();
+      }
+      for (let y = 0; y <= result.height; y += 1) {
+        context.beginPath();
+        context.moveTo(left, top + y * cell);
+        context.lineTo(left + boardWidth, top + y * cell);
+        context.stroke();
+      }
+
+      for (const obstacle of result.obstacles) {
+        const inset = cell * .12;
+        context.fillStyle = '#29453b';
+        context.beginPath();
+        context.roundRect(left + obstacle[0] * cell + inset, top + obstacle[1] * cell + inset, cell - inset * 2, cell - inset * 2, Math.max(4, cell * .12));
+        context.fill();
+        context.fillStyle = 'rgba(255,255,255,.13)';
+        context.fillRect(left + obstacle[0] * cell + inset * 1.8, top + obstacle[1] * cell + inset * 1.8, cell - inset * 3.6, Math.max(2, cell * .035));
+      }
+
+      result.agents.forEach((agent, index) => {
+        const color = colors[index % colors.length];
+        const radius = Math.max(5, cell * .25);
+        const first = center(agent.path[0]);
+        const last = center(agent.path[agent.path.length - 1]);
+
+        context.save();
+        context.globalAlpha = .2;
+        context.strokeStyle = color;
+        context.lineWidth = Math.max(2, cell * .055);
+        context.lineCap = 'round';
+        context.lineJoin = 'round';
+        context.beginPath();
+        agent.path.forEach((point, pointIndex) => {
+          const [x, y] = center(point);
+          if (pointIndex === 0) context.moveTo(x, y);
+          else context.lineTo(x, y);
+        });
+        context.stroke();
+        context.restore();
+
+        context.beginPath();
+        context.arc(first[0], first[1], radius * .72, 0, Math.PI * 2);
+        context.strokeStyle = color;
+        context.lineWidth = 2;
+        context.setLineDash([3, 3]);
+        context.stroke();
+        context.setLineDash([]);
+
+        context.beginPath();
+        context.arc(last[0], last[1], radius * .72, 0, Math.PI * 2);
+        context.fillStyle = `${color}22`;
+        context.fill();
+        context.strokeStyle = color;
+        context.lineWidth = 1.5;
+        context.stroke();
+      });
+
+      result.agents.forEach((agent, index) => {
+        const color = colors[index % colors.length];
+        const low = Math.floor(frame);
+        const fraction = frame - low;
+        const from = agent.path[Math.min(low, agent.path.length - 1)];
+        const to = agent.path[Math.min(low + 1, agent.path.length - 1)];
+        const [fromX, fromY] = center(from);
+        const [toX, toY] = center(to);
+        const x = fromX + (toX - fromX) * fraction;
+        const y = fromY + (toY - fromY) * fraction;
+        const radius = Math.max(7, cell * .29);
+        context.save();
+        context.shadowColor = 'rgba(27, 47, 38, .22)';
+        context.shadowBlur = 10;
+        context.shadowOffsetY = 3;
+        context.beginPath();
+        context.arc(x, y, radius, 0, Math.PI * 2);
+        context.fillStyle = color;
+        context.fill();
+        context.restore();
+        context.beginPath();
+        context.arc(x, y, radius, 0, Math.PI * 2);
+        context.strokeStyle = '#fff';
+        context.lineWidth = 2.5;
+        context.stroke();
+        context.fillStyle = '#fff';
+        context.font = `700 ${Math.max(9, cell * .27)}px ui-sans-serif, system-ui, sans-serif`;
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText(String(index + 1), x, y + .5);
+      });
+    }
+
+    function render() {
+      updatePanel();
+      draw();
+    }
+
+    function tick(timestamp) {
+      if (!playing) return;
+      if (!lastTick) lastTick = timestamp;
+      const duration = Number(document.querySelector('#speed-select').value);
+      const elapsed = timestamp - lastTick;
+      if (elapsed >= duration) {
+        frame = Math.min(maxTime(), frame + elapsed / duration);
+        lastTick = timestamp;
+        if (frame >= maxTime()) {
+          frame = maxTime();
+          playing = false;
+          updatePlayButton();
+        }
+        render();
+      } else {
+        draw();
+      }
+      if (playing) animationId = requestAnimationFrame(tick);
+    }
+
+    function updatePlayButton() {
+      playButton.textContent = playing ? 'Ⅱ' : '▶';
+      playButton.title = playing ? 'Pause animation' : 'Play animation';
+      playButton.setAttribute('aria-label', playButton.title);
+    }
+
+    function pause() {
+      playing = false;
+      cancelAnimationFrame(animationId);
+      updatePlayButton();
+    }
+
+    function loadResult(data, label) {
+      result = validateResult(data);
+      conflicts = findConflicts();
+      frame = 0;
+      pause();
+      sourceStatus.textContent = label;
+      sourceStatus.title = label;
+      render();
+    }
+
+    document.querySelector('#load-button').addEventListener('click', () => document.querySelector('#file-input').click());
+    document.querySelector('#file-input').addEventListener('change', async event => {
+      const file = event.target.files[0];
+      if (!file) return;
+      try {
+        loadResult(JSON.parse(await file.text()), file.name);
+      } catch (error) {
+        sourceStatus.textContent = error instanceof SyntaxError ? 'Invalid JSON file' : error.message;
+        sourceStatus.title = sourceStatus.textContent;
+      }
+      event.target.value = '';
+    });
+    document.querySelector('#reset-button').addEventListener('click', () => { frame = 0; pause(); render(); });
+    document.querySelector('#previous-button').addEventListener('click', () => { pause(); frame = Math.max(0, Math.floor(frame) - 1); render(); });
+    document.querySelector('#next-button').addEventListener('click', () => { pause(); frame = Math.min(maxTime(), Math.floor(frame) + 1); render(); });
+    playButton.addEventListener('click', () => {
+      if (playing) {
+        pause();
+      } else {
+        if (frame >= maxTime()) frame = 0;
+        playing = true;
+        lastTick = 0;
+        updatePlayButton();
+        animationId = requestAnimationFrame(tick);
+      }
+      render();
+    });
+    range.addEventListener('input', () => { pause(); frame = Number(range.value); render(); });
+    window.addEventListener('resize', draw);
+    window.addEventListener('keydown', event => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+      if (event.code === 'Space') {
+        event.preventDefault();
+        playButton.click();
+      } else if (event.code === 'ArrowRight') {
+        document.querySelector('#next-button').click();
+      } else if (event.code === 'ArrowLeft') {
+        document.querySelector('#previous-button').click();
+      }
+    });
+
+    conflicts = findConflicts();
+    render();
+  </script>
+</body>
+</html>
