@@ -6,7 +6,7 @@ TEST_BINARIES := $(patsubst tests/%.cpp,build/%,$(TEST_SOURCES))
 PROJECT_SOURCES := $(filter-out src/main.cpp,$(wildcard src/*.cpp))
 PROJECT_HEADERS := $(wildcard src/*.hpp)
 
-.PHONY: build demo test clean
+.PHONY: build demo serve test clean
 .DEFAULT_GOAL := build
 
 build: build/mapf_demo
@@ -17,6 +17,9 @@ build/mapf_demo: src/main.cpp $(PROJECT_SOURCES) $(PROJECT_HEADERS) | build/
 demo: build/mapf_demo | build/
 	./build/mapf_demo > build/result.json
 	@echo "CBS result written to build/result.json"
+
+serve: build/mapf_demo
+	node server.js
 
 test: $(TEST_BINARIES)
 	@if [ -z "$(TEST_BINARIES)" ]; then \

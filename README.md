@@ -1,12 +1,16 @@
 # MAPF CBS visualizer
 
-Build and run a CBS demo scenario, exporting the computed paths as JSON:
+Start the interactive visualizer and its local CBS API:
 
 ```sh
-make demo
+make serve
 ```
 
-Open `visualizer.html` in a browser, choose **Load result**, and select
-`build/result.json`. The page also opens with a built-in animation sample.
+Open `http://localhost:8000`. Click cells to add/remove obstacles or use the
+start/goal tools to place the selected robot. Add robots with **+ Robot**, then
+choose **Run CBS** to calculate and animate conflict-free paths. The selected
+scenario and CBS paths are also written to `build/result.json`.
+
+To export the built-in demo without opening the interface, run `make demo`.
 
 Run the test suite with `make test`.

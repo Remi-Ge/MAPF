@@ -97,6 +97,44 @@
     .button-icon { width: 40px; padding: 0; font-size: 16px; }
     .button:focus-visible, input:focus-visible { outline: 3px solid rgba(36, 141, 133, .35); outline-offset: 2px; }
     #file-input { display: none; }
+    
+    .editor-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #f5f8f2;
+    }
+    .toolset, .editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .edit-mode {
+      min-height: 34px;
+      padding: 0 10px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .edit-mode[aria-pressed="true"] { border-color: #c9d8c9; background: white; color: var(--forest); box-shadow: 0 1px 2px rgba(20, 45, 32, .06); }
+    .edit-mode:hover { color: var(--ink); }
+    .editor-select {
+      min-height: 34px;
+      padding: 0 9px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: white;
+      color: var(--ink);
+      font-size: 11px;
+    }
+    .editor-actions .button { min-height: 34px; padding: 0 10px; font-size: 11px; }
+    .edit-hint { padding: 8px 17px 0; color: var(--muted); font-size: 10px; }
+    .calculate-button { white-space: nowrap; }
+    .calculate-button:disabled { cursor: progress; opacity: .65; transform: none; }
 
     .workspace {
       display: grid;
@@ -203,6 +241,10 @@
       .topbar { align-items: flex-start; flex-direction: column; padding-bottom: 17px; }
       .topbar .toolbar { width: 100%; }
       .topbar .toolbar .button-primary { flex: 1; }
+      .editor-bar { align-items: flex-start; flex-direction: column; padding: 11px; }
+      .toolset, .editor-actions { width: 100%; }
+      .toolset { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .edit-mode { padding: 0 5px; font-size: 10px; }
       .workspace { gap: 14px; }
       .stage-head { padding: 14px; }
       .canvas-wrap { min-height: 0; padding: 10px; }
@@ -243,6 +285,7 @@
         <input id="file-input" type="file" accept="application/json,.json">
         <button class="button button-primary" id="load-button" type="button"><span aria-hidden="true">↥</span> Load result</button>
         <button class="button" id="reset-button" type="button" title="Return to the first timestep">Reset</button>
+        <button class="button button-primary calculate-button" id="calculate-button" type="button"><span aria-hidden="true">▶</span> Run CBS</button>
       </div>
     </header>
 
@@ -252,8 +295,22 @@
           <div class="stage-title"><span class="live-dot" aria-hidden="true"></span><span id="stage-caption">Solution map</span></div>
           <div class="status" id="source-status" aria-live="polite">Built-in example</div>
         </div>
+        <div class="editor-bar">
+          <div class="toolset" role="toolbar" aria-label="Grid editing tools">
+            <button class="edit-mode" type="button" data-mode="obstacle" aria-pressed="true">Obstacle</button>
+            <button class="edit-mode" type="button" data-mode="start" aria-pressed="false">Start</button>
+            <button class="edit-mode" type="button" data-mode="goal" aria-pressed="false">Goal</button>
+            <button class="edit-mode" type="button" data-mode="erase" aria-pressed="false">Erase</button>
+          </div>
+          <div class="editor-actions">
+            <select class="editor-select" id="selected-agent" aria-label="Robot to edit"></select>
+            <button class="button" id="add-agent" type="button" title="Add a robot">+ Robot</button>
+            <button class="button button-icon" id="remove-agent" type="button" title="Remove the selected robot" aria-label="Remove the selected robot">−</button>
+          </div>
+        </div>
+        <div class="edit-hint" id="edit-hint">Click cells to add or remove obstacles.</div>
         <div class="canvas-wrap">
-          <canvas id="map" aria-label="Animated grid showing robot paths"></canvas>
+          <canvas id="map" aria-label="Editable grid and animated robot paths"></canvas>
         </div>
         <div class="playback">
           <button class="button button-icon" id="previous-button" type="button" title="Previous timestep" aria-label="Previous timestep">‹</button>
@@ -311,12 +368,21 @@
     const range = document.querySelector('#time-range');
     const playButton = document.querySelector('#play-button');
     const sourceStatus = document.querySelector('#source-status');
+    const calculateButton = document.querySelector('#calculate-button');
+    let scenario = {
+      width: demo.width,
+      height: demo.height,
+      obstacles: demo.obstacles.map(point => [...point]),
+      agents: demo.agents.map(({name, start, goal}) => ({name, start: [...start], goal: [...goal]}))
+    };
     let result = demo;
     let frame = 0;
     let playing = false;
     let lastTick = 0;
     let animationId = 0;
     let conflicts = [];
+    let editMode = 'obstacle';
+    let selectedAgent = 0;
 
     function validateResult(data) {
       if (!data || !Number.isInteger(data.width) || !Number.isInteger(data.height)
@@ -335,14 +401,11 @@
     }
 
     function maxTime() {
-      return Math.max(0, ...result.agents.map(agent => agent.path.length - 1));
-    }
-
-    function pointAt(agent, time) {
-      return agent.path[Math.min(Math.floor(time), agent.path.length - 1)];
+      return result ? Math.max(0, ...result.agents.map(agent => agent.path.length - 1)) : 0;
     }
 
     function findConflicts() {
+      if (!result) return [];
       const found = [];
       const horizon = maxTime();
       const at = (agent, time) => agent.path[Math.min(time, agent.path.length - 1)];
@@ -373,13 +436,15 @@
       range.value = String(frame);
       document.querySelector('#time-label').textContent = `${Math.floor(frame)} / ${horizon}`;
       document.querySelector('#frame-label').textContent = `Frame ${Math.floor(frame)}`;
-      document.querySelector('#grid-label').textContent = `${result.width} × ${result.height} grid`;
-      document.querySelector('#agent-count').textContent = `${result.agents.length} ${result.agents.length === 1 ? 'agent' : 'agents'}`;
-      document.querySelector('#makespan-value').textContent = horizon;
-      const sum = result.agents.reduce((total, agent) => total + agent.path.length - 1, 0);
-      document.querySelector('#cost-value').textContent = Number.isFinite(result.cost) ? result.cost : sum;
+      document.querySelector('#grid-label').textContent = `${scenario.width} × ${scenario.height} grid`;
+      document.querySelector('#agent-count').textContent = `${scenario.agents.length} ${scenario.agents.length === 1 ? 'robot' : 'robots'}`;
+      document.querySelector('#makespan-value').textContent = result ? horizon : '—';
+      const sum = scenario.agents.reduce((total, agent) => total + (agent.path ? agent.path.length - 1 : 0), 0);
+      document.querySelector('#cost-value').textContent = result
+        ? (Number.isFinite(result.cost) ? result.cost : sum)
+        : '—';
       const list = document.querySelector('#agent-list');
-      list.replaceChildren(...result.agents.map((agent, index) => {
+      list.replaceChildren(...scenario.agents.map((agent, index) => {
         const row = document.createElement('div');
         row.className = 'agent-row';
         const swatch = document.createElement('span');
@@ -392,20 +457,155 @@
         name.textContent = agent.name || `Robot ${index + 1}`;
         const route = document.createElement('div');
         route.className = 'agent-route';
-        route.textContent = `${agent.start ? agent.start.join(', ') : agent.path[0].join(', ')}  →  ${agent.goal ? agent.goal.join(', ') : agent.path.at(-1).join(', ')}`;
+        route.textContent = `${agent.start ? agent.start.join(', ') : 'start unset'}  →  ${agent.goal ? agent.goal.join(', ') : 'goal unset'}`;
         info.append(name, route);
         const steps = document.createElement('span');
         steps.className = 'agent-steps';
-        steps.textContent = `${agent.path.length - 1} steps`;
+        const path = result && result.agents[index] ? result.agents[index].path : null;
+        steps.textContent = path ? `${path.length - 1} steps` : 'not calculated';
         row.append(swatch, info, steps);
         return row;
       }));
       const status = document.querySelector('#conflict-status');
       status.classList.toggle('has-conflicts', conflicts.length > 0);
       document.querySelector('#conflict-symbol').textContent = conflicts.length > 0 ? '!' : '✓';
-      document.querySelector('#conflict-label').textContent = conflicts.length > 0
-        ? `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} found`
-        : 'No path conflicts';
+      document.querySelector('#conflict-label').textContent = !result
+        ? 'Run CBS to check for conflicts'
+        : conflicts.length > 0
+          ? `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} found`
+          : 'No path conflicts';
+    }
+
+    function syncAgentSelector() {
+      const select = document.querySelector('#selected-agent');
+      select.replaceChildren(...scenario.agents.map((agent, index) => {
+        const option = document.createElement('option');
+        option.value = String(index);
+        option.textContent = agent.name || `Robot ${index + 1}`;
+        return option;
+      }));
+      selectedAgent = Math.min(selectedAgent, scenario.agents.length - 1);
+      select.value = String(selectedAgent);
+      document.querySelector('#remove-agent').disabled = scenario.agents.length <= 1;
+    }
+
+    function setEditMode(mode) {
+      editMode = mode;
+      document.querySelectorAll('.edit-mode').forEach(button => {
+        button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
+      });
+      const labels = {
+        obstacle: 'Click cells to add or remove obstacles.',
+        start: `Click a cell to place ${scenario.agents[selectedAgent].name}'s start.`,
+        goal: `Click a cell to place ${scenario.agents[selectedAgent].name}'s goal.`,
+        erase: 'Click a cell to remove an obstacle or a robot marker.'
+      };
+      document.querySelector('#edit-hint').textContent = labels[mode];
+      canvas.style.cursor = 'crosshair';
+    }
+
+    function scenarioChanged(message) {
+      result = null;
+      conflicts = [];
+      frame = 0;
+      pause();
+      sourceStatus.textContent = message || 'Scenario changed · run CBS to calculate';
+      render();
+    }
+
+    function loadResult(data, label) {
+      result = validateResult(data);
+      scenario = {
+        width: data.width,
+        height: data.height,
+        obstacles: data.obstacles.map(point => [...point]),
+        agents: data.agents.map((agent, index) => ({
+          name: agent.name || `Robot ${index + 1}`,
+          start: agent.start ? [...agent.start] : [...agent.path[0]],
+          goal: agent.goal ? [...agent.goal] : [...agent.path.at(-1)]
+        }))
+      };
+      selectedAgent = Math.min(selectedAgent, scenario.agents.length - 1);
+      syncAgentSelector();
+      conflicts = findConflicts();
+      frame = 0;
+      pause();
+      sourceStatus.textContent = label;
+      sourceStatus.title = label;
+      render();
+    }
+
+    async function calculateScenario() {
+      calculateButton.disabled = true;
+      calculateButton.textContent = 'Calculating…';
+      sourceStatus.textContent = 'CBS is searching for a solution…';
+      try {
+        const response = await fetch('/solve', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(scenario)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'CBS could not solve this scenario.');
+        loadResult(data, 'CBS solution');
+      } catch (error) {
+        sourceStatus.textContent = error.message;
+        sourceStatus.title = error.message;
+      } finally {
+        calculateButton.disabled = false;
+        calculateButton.innerHTML = '<span aria-hidden="true">▶</span> Run CBS';
+      }
+    }
+
+    function editCell(event) {
+      const bounds = canvas.getBoundingClientRect();
+      const margin = Math.max(28, Math.min(bounds.width, bounds.height) * .075);
+      const cell = Math.min(
+        (bounds.width - margin * 2) / scenario.width,
+        (bounds.height - margin * 2) / scenario.height
+      );
+      const left = (bounds.width - cell * scenario.width) / 2;
+      const top = (bounds.height - cell * scenario.height) / 2;
+      const x = Math.floor((event.clientX - bounds.left - left) / cell);
+      const y = Math.floor((event.clientY - bounds.top - top) / cell);
+      if (x < 0 || x >= scenario.width || y < 0 || y >= scenario.height) return;
+      const point = [x, y];
+      const pointKey = ([pointX, pointY]) => `${pointX},${pointY}`;
+      const key = pointKey(point);
+      const obstacleIndex = scenario.obstacles.findIndex(obstacle => pointKey(obstacle) === key);
+
+      if (editMode === 'obstacle') {
+        if (obstacleIndex !== -1) {
+          scenario.obstacles.splice(obstacleIndex, 1);
+        } else if (scenario.agents.some(agent => pointKey(agent.start || [-1, -1]) === key
+            || pointKey(agent.goal || [-1, -1]) === key)) {
+          sourceStatus.textContent = 'Move the robot marker before placing an obstacle here.';
+          return;
+        } else {
+          scenario.obstacles.push(point);
+        }
+      } else if (editMode === 'start' || editMode === 'goal') {
+        if (obstacleIndex !== -1) {
+          sourceStatus.textContent = 'A robot marker cannot be placed on an obstacle.';
+          return;
+        }
+        const property = editMode;
+        const alreadyUsed = scenario.agents.some((agent, index) => index !== selectedAgent
+          && agent[property] && pointKey(agent[property]) === key);
+        if (alreadyUsed) {
+          sourceStatus.textContent = `Another robot already has this ${property}.`;
+          return;
+        }
+        scenario.agents[selectedAgent][property] = point;
+      } else {
+        if (obstacleIndex !== -1) scenario.obstacles.splice(obstacleIndex, 1);
+        for (const agent of scenario.agents) {
+          if (agent.start && pointKey(agent.start) === key) agent.start = null;
+          if (agent.goal && pointKey(agent.goal) === key) agent.goal = null;
+        }
+      }
+
+      scenarioChanged();
     }
 
     function draw() {
@@ -422,9 +622,9 @@
       context.fillRect(0, 0, width, height);
 
       const margin = Math.max(28, Math.min(width, height) * .075);
-      const cell = Math.min((width - margin * 2) / result.width, (height - margin * 2) / result.height);
-      const boardWidth = cell * result.width;
-      const boardHeight = cell * result.height;
+      const cell = Math.min((width - margin * 2) / scenario.width, (height - margin * 2) / scenario.height);
+      const boardWidth = cell * scenario.width;
+      const boardHeight = cell * scenario.height;
       const left = (width - boardWidth) / 2;
       const top = (height - boardHeight) / 2;
       const center = ([x, y]) => [left + (x + .5) * cell, top + (y + .5) * cell];
@@ -433,20 +633,20 @@
       context.fillRect(left, top, boardWidth, boardHeight);
       context.strokeStyle = '#d4ded4';
       context.lineWidth = 1;
-      for (let x = 0; x <= result.width; x += 1) {
+      for (let x = 0; x <= scenario.width; x += 1) {
         context.beginPath();
         context.moveTo(left + x * cell, top);
         context.lineTo(left + x * cell, top + boardHeight);
         context.stroke();
       }
-      for (let y = 0; y <= result.height; y += 1) {
+      for (let y = 0; y <= scenario.height; y += 1) {
         context.beginPath();
         context.moveTo(left, top + y * cell);
         context.lineTo(left + boardWidth, top + y * cell);
         context.stroke();
       }
 
-      for (const obstacle of result.obstacles) {
+      for (const obstacle of scenario.obstacles) {
         const inset = cell * .12;
         context.fillStyle = '#29453b';
         context.beginPath();
@@ -456,54 +656,64 @@
         context.fillRect(left + obstacle[0] * cell + inset * 1.8, top + obstacle[1] * cell + inset * 1.8, cell - inset * 3.6, Math.max(2, cell * .035));
       }
 
-      result.agents.forEach((agent, index) => {
+      if (result) {
+        result.agents.forEach((agent, index) => {
+          const color = colors[index % colors.length];
+          context.save();
+          context.globalAlpha = .2;
+          context.strokeStyle = color;
+          context.lineWidth = Math.max(2, cell * .055);
+          context.lineCap = 'round';
+          context.lineJoin = 'round';
+          context.beginPath();
+          agent.path.forEach((point, pointIndex) => {
+            const [x, y] = center(point);
+            if (pointIndex === 0) context.moveTo(x, y);
+            else context.lineTo(x, y);
+          });
+          context.stroke();
+          context.restore();
+        });
+      }
+
+      scenario.agents.forEach((agent, index) => {
         const color = colors[index % colors.length];
         const radius = Math.max(5, cell * .25);
-        const first = center(agent.path[0]);
-        const last = center(agent.path[agent.path.length - 1]);
-
-        context.save();
-        context.globalAlpha = .2;
-        context.strokeStyle = color;
-        context.lineWidth = Math.max(2, cell * .055);
-        context.lineCap = 'round';
-        context.lineJoin = 'round';
-        context.beginPath();
-        agent.path.forEach((point, pointIndex) => {
-          const [x, y] = center(point);
-          if (pointIndex === 0) context.moveTo(x, y);
-          else context.lineTo(x, y);
-        });
-        context.stroke();
-        context.restore();
-
-        context.beginPath();
-        context.arc(first[0], first[1], radius * .72, 0, Math.PI * 2);
-        context.strokeStyle = color;
-        context.lineWidth = 2;
-        context.setLineDash([3, 3]);
-        context.stroke();
-        context.setLineDash([]);
-
-        context.beginPath();
-        context.arc(last[0], last[1], radius * .72, 0, Math.PI * 2);
-        context.fillStyle = `${color}22`;
-        context.fill();
-        context.strokeStyle = color;
-        context.lineWidth = 1.5;
-        context.stroke();
+        if (agent.start) {
+          const [x, y] = center(agent.start);
+          context.beginPath();
+          context.arc(x, y, radius * .72, 0, Math.PI * 2);
+          context.strokeStyle = color;
+          context.lineWidth = 2;
+          context.setLineDash([3, 3]);
+          context.stroke();
+          context.setLineDash([]);
+        }
+        if (agent.goal) {
+          const [x, y] = center(agent.goal);
+          context.beginPath();
+          context.arc(x, y, radius * .72, 0, Math.PI * 2);
+          context.fillStyle = `${color}22`;
+          context.fill();
+          context.strokeStyle = color;
+          context.lineWidth = 1.5;
+          context.stroke();
+        }
       });
 
-      result.agents.forEach((agent, index) => {
+      scenario.agents.forEach((scenarioAgent, index) => {
         const color = colors[index % colors.length];
-        const low = Math.floor(frame);
-        const fraction = frame - low;
-        const from = agent.path[Math.min(low, agent.path.length - 1)];
-        const to = agent.path[Math.min(low + 1, agent.path.length - 1)];
-        const [fromX, fromY] = center(from);
-        const [toX, toY] = center(to);
-        const x = fromX + (toX - fromX) * fraction;
-        const y = fromY + (toY - fromY) * fraction;
+        const agent = result && result.agents[index];
+        let position = scenarioAgent.start;
+        if (agent) {
+          const low = Math.floor(frame);
+          const fraction = frame - low;
+          const from = agent.path[Math.min(low, agent.path.length - 1)];
+          const to = agent.path[Math.min(low + 1, agent.path.length - 1)];
+          position = [from[0] + (to[0] - from[0]) * fraction, from[1] + (to[1] - from[1]) * fraction];
+        }
+        if (!position) return;
+        const [x, y] = center(position);
         const radius = Math.max(7, cell * .29);
         context.save();
         context.shadowColor = 'rgba(27, 47, 38, .22)';
@@ -586,6 +796,35 @@
       }
       event.target.value = '';
     });
+    document.querySelectorAll('.edit-mode').forEach(button => {
+      button.addEventListener('click', () => setEditMode(button.dataset.mode));
+    });
+    document.querySelector('#selected-agent').addEventListener('change', event => {
+      selectedAgent = Number(event.target.value);
+      setEditMode(editMode);
+    });
+    document.querySelector('#add-agent').addEventListener('click', () => {
+      if (scenario.agents.length >= 8) {
+        sourceStatus.textContent = 'The solver supports up to 8 robots.';
+        return;
+      }
+      const name = `Robot ${scenario.agents.length + 1}`;
+      scenario.agents.push({name, start: null, goal: null});
+      selectedAgent = scenario.agents.length - 1;
+      syncAgentSelector();
+      setEditMode('start');
+      scenarioChanged(`${name} added · place its start and goal`);
+    });
+    document.querySelector('#remove-agent').addEventListener('click', () => {
+      if (scenario.agents.length <= 1) return;
+      scenario.agents.splice(selectedAgent, 1);
+      selectedAgent = Math.min(selectedAgent, scenario.agents.length - 1);
+      syncAgentSelector();
+      setEditMode(editMode);
+      scenarioChanged('Robot removed · run CBS to calculate');
+    });
+    document.querySelector('#calculate-button').addEventListener('click', calculateScenario);
+    canvas.addEventListener('click', editCell);
     document.querySelector('#reset-button').addEventListener('click', () => { frame = 0; pause(); render(); });
     document.querySelector('#previous-button').addEventListener('click', () => { pause(); frame = Math.max(0, Math.floor(frame) - 1); render(); });
     document.querySelector('#next-button').addEventListener('click', () => { pause(); frame = Math.min(maxTime(), Math.floor(frame) + 1); render(); });
@@ -615,6 +854,8 @@
       }
     });
 
+    syncAgentSelector();
+    setEditMode(editMode);
     conflicts = findConflicts();
     render();
   </script>
